@@ -1,0 +1,52 @@
+# agent-rs-web local infra.
+#
+# Isolated from agent-rs' own docker-compose: different databases,
+# different ports, different volumes. agent-rs keeps its app-data
+# Postgres on 1054; agent-rs-web owns its web-data Postgres on 1073
+# and Redis on 1074. The two services are loosely coupled via the
+# agent-rs gRPC endpoint (defaults to host:1072 — override with
+# AGENT_RS_GRPC_URL).
+#
+# Bring it up with:
+#   just infra-up
+#
+# Or directly:
+#   docker compose up -d
+#
+# Volumes are named + persistent; wipe with `just infra-reset`.
+
+services:
+  postgres-web:
+    image: postgres:17.4
+    container_name: agent-rs-web-postgres
+    ports:
+      - "${AGENT_RS_WEB_POSTGRES_PORT:-1073}:5432"
+    environment:
+      POSTGRES_USER: ${AGENT_RS_WEB_POSTGRES_USER:-webapp}
+      POSTGRES_PASSWORD: ${AGENT_RS_WEB_POSTGRES_PASSWORD:-changeme-web}
+      POSTGRES_DB: ${AGENT_RS_WEB_POSTGRES_DB:-agent_rs_web}
+    volumes:
+      - postgres_web_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${AGENT_RS_WEB_POSTGRES_USER:-webapp} -d ${AGENT_RS_WEB_POSTGRES_DB:-agent_rs_web}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: agent-rs-web-redis
+    ports:
+      - "${AGENT_RS_WEB_REDIS_PORT:-1074}:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  postgres_web_data:
+  redis_data:

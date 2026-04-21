@@ -31,7 +31,14 @@ serde           = { version = "1",    features = ["derive"] }
 serde_json      = { version = "1",    optional = true }
 uuid            = { version = "1",    features = ["v4", "serde"] }
 tower-sessions              = { version = "0.14", optional = true }
-tower-sessions-memory-store = { version = "0.14", optional = true }
+# Redis-backed session store — sessions survive a server restart
+# and scale horizontally across multiple SSR workers.
+# tower-sessions-redis-store 0.16 pins tower-sessions-core 0.14, so
+# we stay on tower-sessions 0.14 to avoid a second-copy mismatch
+# where RedisStore implements SessionStore from a different version
+# than SessionManagerLayer expects.
+tower-sessions-redis-store  = { version = "0.16", optional = true }
+fred                        = { version = "10",   optional = true }
 diesel          = { version = "2.2", features = ["postgres", "chrono", "uuid"], optional = true }
 diesel-async    = { version = "0.5", features = ["postgres", "bb8"], optional = true }
 chrono          = { version = "0.4", features = ["serde"] }
@@ -81,7 +88,8 @@ ssr = [
     "dep:bcrypt",
     "dep:serde_json",
     "dep:tower-sessions",
-    "dep:tower-sessions-memory-store",
+    "dep:tower-sessions-redis-store",
+    "dep:fred",
     "dep:diesel",
     "dep:diesel-async",
     "dep:anyhow",
