@@ -30,15 +30,30 @@ bcrypt          = { version = "0.15", optional = true }
 serde           = { version = "1",    features = ["derive"] }
 serde_json      = { version = "1",    optional = true }
 uuid            = { version = "1",    features = ["v4", "serde"] }
-tower-sessions  = { version = "0.14", optional = true }
+tower-sessions              = { version = "0.14", optional = true }
+tower-sessions-memory-store = { version = "0.14", optional = true }
 diesel          = { version = "2.2", features = ["postgres", "chrono", "uuid"], optional = true }
 diesel-async    = { version = "0.5", features = ["postgres", "bb8"], optional = true }
 chrono          = { version = "0.4", features = ["serde"] }
 
+# Streaming / byte utilities.
+futures = { version = "0.3", optional = true }
+bytes   = { version = "1",   optional = true }
+
+# Time — required by tower-sessions session expiry.
+time    = { version = "0.3", optional = true }
+
+# .env loader (dev convenience; optional so the binary still starts without a .env)
+dotenvy = { version = "0.15", optional = true }
+
+# Browser file-reading utilities (hydrate only — compiled to wasm)
+js-sys              = { version = "0.3", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+
 # Errors + observability.
-anyhow          = { version = "1", optional = true }
-thiserror       = "1"
-tracing         = "0.1"
+anyhow             = { version = "1", optional = true }
+thiserror          = "1"
+tracing            = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 
 [build-dependencies]
@@ -49,6 +64,8 @@ hydrate = [
     "leptos/hydrate",
     "dep:console_error_panic_hook",
     "dep:wasm-bindgen",
+    "dep:js-sys",
+    "dep:wasm-bindgen-futures",
 ]
 ssr = [
     "dep:axum",
@@ -64,10 +81,15 @@ ssr = [
     "dep:bcrypt",
     "dep:serde_json",
     "dep:tower-sessions",
+    "dep:tower-sessions-memory-store",
     "dep:diesel",
     "dep:diesel-async",
     "dep:anyhow",
     "dep:tracing-subscriber",
+    "dep:futures",
+    "dep:bytes",
+    "dep:time",
+    "dep:dotenvy",
 ]
 
 # Defines a size-optimized profile for the WASM bundle in release mode
