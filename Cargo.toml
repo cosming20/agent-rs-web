@@ -53,9 +53,20 @@ time    = { version = "0.3", optional = true }
 # .env loader (dev convenience; optional so the binary still starts without a .env)
 dotenvy = { version = "0.15", optional = true }
 
-# Browser file-reading utilities (hydrate only — compiled to wasm)
+# Browser file-reading utilities (hydrate only — compiled to wasm).
+# Leptos re-exports web-sys but does not enable every DOM type by
+# default; the upload form in routes/library.rs needs File + FileList
+# + the HtmlInputElement.files() method, all gated behind per-type
+# features on web-sys.
 js-sys              = { version = "0.3", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
+web-sys             = { version = "0.3", optional = true, features = [
+    "Blob",
+    "File",
+    "FileList",
+    "HtmlInputElement",
+    "HtmlFormElement",
+] }
 
 # Errors + observability.
 anyhow             = { version = "1", optional = true }
@@ -73,6 +84,7 @@ hydrate = [
     "dep:wasm-bindgen",
     "dep:js-sys",
     "dep:wasm-bindgen-futures",
+    "dep:web-sys",
 ]
 ssr = [
     "dep:axum",
