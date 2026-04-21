@@ -29,7 +29,7 @@ tonic-types = { version = "0.12", optional = true }
 bcrypt          = { version = "0.15", optional = true }
 serde           = { version = "1",    features = ["derive"] }
 serde_json      = { version = "1",    optional = true }
-uuid            = { version = "1",    features = ["v4", "serde"] }
+uuid            = { version = "1",    features = ["v4", "serde", "js"] }
 tower-sessions              = { version = "0.14", optional = true }
 # Redis-backed session store — sessions survive a server restart
 # and scale horizontally across multiple SSR workers.
