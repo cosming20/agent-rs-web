@@ -9,11 +9,13 @@
 #[tokio::main]
 async fn main() {
     use axum::Router;
+    use fred::prelude::{ClientLike, Config as FredConfig, Pool as FredPool};
     use leptos::logging::log;
     use leptos::prelude::*;
     use leptos_axum::{generate_route_list, LeptosRoutes};
     use time::Duration;
-    use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer};
+    use tower_sessions::{Expiry, SessionManagerLayer};
+    use tower_sessions_redis_store::RedisStore;
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
     use agent_rs_web::app::{shell, App};
@@ -40,9 +42,21 @@ async fn main() {
         .expect("failed to build Postgres connection pool");
 
     // ---------------------------------------------------------------------------
-    // Session layer
+    // Session layer — Redis backed (persistent across restarts, shardable)
     // ---------------------------------------------------------------------------
-    let session_store = MemoryStore::default();
+    let redis_url = std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:1074".into());
+    let fred_cfg = FredConfig::from_url(&redis_url).expect("invalid REDIS_URL");
+    let fred_pool = FredPool::new(fred_cfg, None, None, None, 4).expect("build Redis pool");
+    // Fred 10: `init()` spawns the reconnect loop and returns a
+    // JoinHandle. `connect()` then drives the actual TCP connect, and
+    // `wait_for_connect` blocks until the pool is ready so the first
+    // session read/write doesn't race against cold start.
+    let _reconnect_handle = fred_pool.init().await.expect("start Redis reconnect loop");
+    fred_pool
+        .wait_for_connect()
+        .await
+        .expect("connect Redis");
+    let session_store = RedisStore::new(fred_pool);
     let session_layer = SessionManagerLayer::new(session_store)
         .with_name("agent-rs-web-session")
         .with_secure(false) // set true behind TLS in production
