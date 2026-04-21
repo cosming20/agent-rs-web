@@ -12,3 +12,13 @@ Cargo.lock
 
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
+
+# Local dev env — contains DATABASE_URL / REDIS_URL / SESSION_SECRET
+# defaults, not secrets, but still shouldn't travel via git.
+.env
+.env.local
+
+# cargo-leptos / Leptos SSR build artefacts
+end2end/node_modules/
+node_modules/
+

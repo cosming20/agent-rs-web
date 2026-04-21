@@ -84,6 +84,14 @@ async fn main() {
             },
         )
         .fallback(leptos_axum::file_and_error_handler(shell))
+        // Order matters: inner layer runs first. `from_fn(auth_gate)` needs
+        // `Session` extracted, which is only available after `session_layer`
+        // has run on the request path. Because tower layers compose inside-
+        // out, the session layer must be added LAST here so it wraps the
+        // auth gate.
+        .layer(axum::middleware::from_fn(
+            agent_rs_web::middleware::auth_gate,
+        ))
         .layer(session_layer)
         .with_state(leptos_options);
 

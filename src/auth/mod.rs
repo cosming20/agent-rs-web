@@ -5,8 +5,6 @@
 
 #![cfg(feature = "ssr")]
 
-pub mod schema;
-
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
@@ -30,7 +28,7 @@ const SESSION_USER_ID_KEY: &str = "user_id";
 
 /// A row in the `users` table.
 #[derive(Debug, Clone, Queryable, Selectable, Serialize, Deserialize)]
-#[diesel(table_name = schema::users)]
+#[diesel(table_name = crate::schema::users)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct User {
     pub id: Uuid,
@@ -51,7 +49,7 @@ impl User {
 
 /// Insertable shape for a new user row.
 #[derive(Debug, Insertable)]
-#[diesel(table_name = schema::users)]
+#[diesel(table_name = crate::schema::users)]
 struct NewUser<'a> {
     email: &'a str,
     password_hash: &'a str,
@@ -74,11 +72,17 @@ pub async fn create_user(
     email: &str,
     raw_password: &str,
 ) -> Result<User, AppError> {
-    use schema::users::dsl;
+    use crate::schema::users::dsl;
+
+    // Normalize the email before storing so "Bobby@example.com" and
+    // "bobby@example.com" land on the same row. Without this we'd either
+    // rely on Postgres CITEXT (awkward diesel integration) or silently
+    // permit duplicate accounts differing only in case.
+    let email_lc = email.trim().to_ascii_lowercase();
 
     let hash = bcrypt::hash(raw_password, 12)?;
     let new_user = NewUser {
-        email,
+        email: &email_lc,
         password_hash: &hash,
     };
 
@@ -110,10 +114,14 @@ pub async fn verify_credentials(
     email: &str,
     raw_password: &str,
 ) -> Result<User, AppError> {
-    use schema::users::dsl;
+    use crate::schema::users::dsl;
+
+    // Match the normalization applied at signup — stored emails are always
+    // trimmed + lowercased.
+    let email_lc = email.trim().to_ascii_lowercase();
 
     let maybe_user: Option<User> = dsl::users
-        .filter(dsl::email.eq(email))
+        .filter(dsl::email.eq(&email_lc))
         .select(User::as_select())
         .first(conn)
         .await
@@ -154,7 +162,7 @@ pub async fn load_user_by_id(
     conn: &mut AsyncPgConnection,
     id: Uuid,
 ) -> Result<User, AppError> {
-    use schema::users::dsl;
+    use crate::schema::users::dsl;
 
     dsl::users
         .filter(dsl::id.eq(id))
@@ -193,6 +201,22 @@ pub async fn session_current_user(
     match uid {
         Some(id) => load_user_by_id(conn, id).await,
         None => Err(AppError::Unauthenticated),
+    }
+}
+
+/// Read just the user id out of the session.
+///
+/// Returns `None` if the cookie is absent or the session store read fails
+/// — fail-safe so middleware never treats a transient Redis hiccup as
+/// "authenticated". Used by the auth-gate middleware which doesn't need the
+/// full `User` row.
+pub async fn session_user_id(session: &Session) -> Option<Uuid> {
+    match session.get::<Uuid>(SESSION_USER_ID_KEY).await {
+        Ok(opt) => opt,
+        Err(e) => {
+            warn!(error = %e, "session store read failed; treating as unauthenticated");
+            None
+        }
     }
 }
 

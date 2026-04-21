@@ -1,5 +1,5 @@
 [print_schema]
-file = "src/auth/schema.rs"
+file = "src/schema.rs"
 
 [migrations_directory]
 dir = "migrations"
