@@ -21,6 +21,7 @@ diesel::table! {
         title -> Text,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
+        pinned_document_ids -> Nullable<Array<Nullable<Uuid>>>,
     }
 }
 

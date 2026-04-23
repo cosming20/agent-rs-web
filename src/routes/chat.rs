@@ -22,6 +22,33 @@ pub struct ConversationView {
     pub title: String,
 }
 
+/// Library document as rendered next to the pinning checkboxes.
+///
+/// `pinned` carries the current checkbox state for this conversation;
+/// `available = true` means the user may actually pick this doc (the
+/// indexer has reported `complete`). Rows where `available = false`
+/// render disabled checkboxes with a status hint so the user can see
+/// what is still pending.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DocumentPinningView {
+    pub id: Uuid,
+    pub filename: String,
+    pub ingest_status: String,
+    pub available: bool,
+    pub pinned: bool,
+}
+
+/// Wrapper for the two things the pinning UI needs in one Resource —
+/// which conversation row we're looking at (for the "auto mode" flag)
+/// and the library row shape the checkboxes render.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PinningState {
+    /// When `true`, `pinned_document_ids` is NULL on the conversation
+    /// row and the UI is implicitly tracking every `complete` doc.
+    pub auto_mode: bool,
+    pub documents: Vec<DocumentPinningView>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MessageView {
     pub id: Uuid,
@@ -120,6 +147,26 @@ pub fn ConversationPage() -> impl IntoView {
     );
 
     let send = ServerAction::<SendMessageAction>::new();
+    let save_pinning = ServerAction::<SavePinningAction>::new();
+    let clear_pinning = ServerAction::<ClearPinningAction>::new();
+
+    let pinning = Resource::new(
+        move || {
+            (
+                conversation_id.get(),
+                send.version().get(),
+                save_pinning.version().get(),
+                clear_pinning.version().get(),
+            )
+        },
+        |(maybe_id, _, _, _)| async move {
+            let Some(id) = maybe_id else {
+                return Err(ServerFnError::new("no conversation id"));
+            };
+            load_pinning_state(id).await
+        },
+    );
+
     let _ = Effect::new(move |_| {
         let _ = send.value().get();
         messages.refetch();
@@ -146,7 +193,22 @@ pub fn ConversationPage() -> impl IntoView {
                 </Suspense>
             </section>
 
-            <section style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #ccc;">
+            <section style="margin-top: 2rem; padding: 1rem; border: 1px solid #ccc; border-radius: 4px; background: #fafafa;">
+                <h3 style="margin-top: 0; font-size: 1rem;">"Pinned documents"</h3>
+                <Suspense fallback=|| view! { <p style="color: #666;">"Loading library…"</p> }>
+                    {move || conversation_id.get().and_then(|id| {
+                        pinning.get().map(|result| match result {
+                            Ok(state) => render_pinning_panel(id, state, save_pinning, clear_pinning).into_any(),
+                            Err(e) => view! {
+                                <p style="color: red;">"Pinning panel error: " {e.to_string()}</p>
+                            }
+                            .into_any(),
+                        })
+                    })}
+                </Suspense>
+            </section>
+
+            <section style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #ccc;">
                 <ActionForm action=send>
                     {move || conversation_id.get().map(|id| view! {
                         <input type="hidden" name="conversation_id" value=id.to_string()/>
@@ -159,15 +221,86 @@ pub fn ConversationPage() -> impl IntoView {
                     ></textarea>
                     <button type="submit" style="margin-top: 0.5rem;">"Send"</button>
                 </ActionForm>
-                <p style="color: #666; font-size: 0.9rem; margin-top: 0.5rem;">
-                    "Active documents are every " <code>"complete"</code>
-                    " entry in your library. Upload a file from "
-                    <a href="/library">"/library"</a>
-                    " first if you haven't yet."
-                </p>
             </section>
         </div>
     }
+}
+
+/// Render the pinning checkboxes + the two management actions
+/// ("Save pinning" on the form, and a standalone "Reset to all" button
+/// that clears the explicit selection).
+fn render_pinning_panel(
+    conversation_id: Uuid,
+    state: PinningState,
+    save_action: ServerAction<SavePinningAction>,
+    clear_action: ServerAction<ClearPinningAction>,
+) -> impl IntoView {
+    if state.documents.is_empty() {
+        return view! {
+            <p style="color: #666; font-size: 0.9rem; margin: 0;">
+                "No library documents yet. Upload one from "
+                <a href="/library">"/library"</a> "."
+            </p>
+        }
+        .into_any();
+    }
+
+    let auto_label = if state.auto_mode {
+        "auto (every complete doc)"
+    } else {
+        "custom subset"
+    };
+
+    view! {
+        <p style="color: #666; font-size: 0.85rem; margin: 0 0 0.75rem 0;">
+            "Mode: " <strong>{auto_label}</strong>
+            ". Tick the docs you want the agent to see, then Save. "
+            "Click Reset to go back to auto mode."
+        </p>
+        <ActionForm action=save_action>
+            <input type="hidden" name="conversation_id" value=conversation_id.to_string()/>
+            <ul style="list-style: none; padding: 0; margin: 0;">
+                {state.documents.iter().cloned().map(|doc| {
+                    let disabled = !doc.available;
+                    let checked = doc.pinned;
+                    let status_note = if doc.available {
+                        String::new()
+                    } else {
+                        format!(" ({})", doc.ingest_status)
+                    };
+                    view! {
+                        <li style="padding: 0.25rem 0;">
+                            <label style=format!(
+                                "display: flex; align-items: center; gap: 0.5rem; opacity: {};",
+                                if disabled { "0.5" } else { "1" }
+                            )>
+                                <input
+                                    type="checkbox"
+                                    name="pinned_ids"
+                                    value=doc.id.to_string()
+                                    checked=checked
+                                    disabled=disabled
+                                />
+                                <span>{doc.filename}</span>
+                                <span style="color: #aa7700; font-size: 0.8rem;">{status_note}</span>
+                            </label>
+                        </li>
+                    }
+                }).collect::<Vec<_>>()}
+            </ul>
+            <button type="submit" style="margin-top: 0.5rem;">"Save pinning"</button>
+        </ActionForm>
+        <ActionForm action=clear_action>
+            <input type="hidden" name="conversation_id" value=conversation_id.to_string()/>
+            <button
+                type="submit"
+                style="margin-top: 0.25rem; background: transparent; border: none; color: #06c; text-decoration: underline; cursor: pointer;"
+            >
+                "Reset to all documents (auto mode)"
+            </button>
+        </ActionForm>
+    }
+    .into_any()
 }
 
 fn render_message(msg: MessageView) -> impl IntoView {
@@ -267,6 +400,106 @@ pub async fn create_conversation_action() -> Result<(), ServerFnError> {
     }
 }
 
+#[leptos::server(LoadPinningState, "/api/load_pinning_state")]
+pub async fn load_pinning_state(conversation_id: Uuid) -> Result<PinningState, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        let (user_id, mut conn) = ssr_auth_and_conn().await?;
+        let conv = crate::conversations::load_conversation(&mut conn, user_id, conversation_id)
+            .await
+            .map_err(|e| ServerFnError::new(format!("load: {e}")))?;
+
+        let library = list_library_entries(&mut conn, user_id)
+            .await
+            .map_err(|e| ServerFnError::new(format!("library: {e}")))?;
+
+        let (auto_mode, pinned_set) = match conv.pinned_document_ids {
+            None => (true, Vec::new()),
+            Some(ids) => (
+                false,
+                ids.into_iter().flatten().collect::<Vec<Uuid>>(),
+            ),
+        };
+
+        let documents = library
+            .into_iter()
+            .map(|(id, filename, status)| {
+                let available = status == "complete";
+                let pinned = if auto_mode {
+                    available
+                } else {
+                    pinned_set.contains(&id)
+                };
+                DocumentPinningView {
+                    id,
+                    filename,
+                    ingest_status: status,
+                    available,
+                    pinned,
+                }
+            })
+            .collect();
+
+        Ok(PinningState {
+            auto_mode,
+            documents,
+        })
+    }
+    #[cfg(not(feature = "ssr"))]
+    {
+        Err(ServerFnError::new("ssr-only"))
+    }
+}
+
+#[leptos::server(SavePinningAction, "/api/save_pinning_action")]
+pub async fn save_pinning_action(
+    conversation_id: Uuid,
+    #[server(default)] pinned_ids: Vec<String>,
+) -> Result<(), ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        let (user_id, mut conn) = ssr_auth_and_conn().await?;
+        let ids: Vec<Uuid> = pinned_ids
+            .into_iter()
+            .filter_map(|s| Uuid::parse_str(&s).ok())
+            .collect();
+        crate::conversations::set_pinned_document_ids(
+            &mut conn,
+            user_id,
+            conversation_id,
+            Some(&ids),
+        )
+        .await
+        .map_err(|e| ServerFnError::new(format!("save: {e}")))?;
+        Ok(())
+    }
+    #[cfg(not(feature = "ssr"))]
+    {
+        Err(ServerFnError::new("ssr-only"))
+    }
+}
+
+#[leptos::server(ClearPinningAction, "/api/clear_pinning_action")]
+pub async fn clear_pinning_action(conversation_id: Uuid) -> Result<(), ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        let (user_id, mut conn) = ssr_auth_and_conn().await?;
+        crate::conversations::set_pinned_document_ids(
+            &mut conn,
+            user_id,
+            conversation_id,
+            None,
+        )
+        .await
+        .map_err(|e| ServerFnError::new(format!("clear: {e}")))?;
+        Ok(())
+    }
+    #[cfg(not(feature = "ssr"))]
+    {
+        Err(ServerFnError::new("ssr-only"))
+    }
+}
+
 #[leptos::server(LoadConversationMessages, "/api/load_conversation_messages")]
 pub async fn load_conversation_messages(
     conversation_id: Uuid,
@@ -305,10 +538,25 @@ pub async fn send_message_action(
             .await
             .map_err(|e| ServerFnError::new(format!("load conversation: {e}")))?;
 
-        // Active-document set: every document the user has fully indexed.
-        let active_keys = list_complete_minio_keys(&mut conn, user_id)
-            .await
-            .map_err(|e| ServerFnError::new(format!("active docs: {e}")))?;
+        // Active-document set:
+        //   - auto mode (pinned_document_ids IS NULL) → every `complete` doc
+        //   - explicit mode (pinned_document_ids = list) → only those docs,
+        //     restricted to ones that are actually `complete`
+        let active_keys = match conv.pinned_document_ids.as_ref() {
+            None => list_complete_minio_keys(&mut conn, user_id)
+                .await
+                .map_err(|e| ServerFnError::new(format!("active docs: {e}")))?,
+            Some(ids) => {
+                let pinned: Vec<Uuid> = ids.iter().filter_map(|x| *x).collect();
+                if pinned.is_empty() {
+                    Vec::new()
+                } else {
+                    list_minio_keys_for_ids(&mut conn, user_id, &pinned)
+                        .await
+                        .map_err(|e| ServerFnError::new(format!("pinned docs: {e}")))?
+                }
+            }
+        };
 
         // Replay history inline (agent is stateless).
         let history_rows = crate::conversations::list_messages(&mut conn, conversation_id)
@@ -494,6 +742,51 @@ async fn list_complete_minio_keys(
         .filter(dsl::user_id.eq(owner))
         .filter(dsl::ingest_status.eq("complete"))
         .select(dsl::minio_object_key)
+        .load(conn)
+        .await
+        .map_err(crate::error::AppError::from)
+}
+
+/// Fetch the MinIO keys for a specific set of documents owned by `owner`.
+/// Drops any id that isn't `complete` (the agent refuses to retrieve
+/// half-indexed docs anyway, and silently skipping is better UX than
+/// failing the whole Ask).
+#[cfg(feature = "ssr")]
+async fn list_minio_keys_for_ids(
+    conn: &mut diesel_async::AsyncPgConnection,
+    owner: Uuid,
+    ids: &[Uuid],
+) -> Result<Vec<String>, crate::error::AppError> {
+    use crate::schema::ingested_documents::dsl;
+    use diesel::prelude::*;
+    use diesel_async::RunQueryDsl;
+
+    dsl::ingested_documents
+        .filter(dsl::user_id.eq(owner))
+        .filter(dsl::id.eq_any(ids))
+        .filter(dsl::ingest_status.eq("complete"))
+        .select(dsl::minio_object_key)
+        .load(conn)
+        .await
+        .map_err(crate::error::AppError::from)
+}
+
+/// Return the library rows a pinning panel needs — id, filename, and
+/// the current ingest status so the UI can disable rows that aren't
+/// `complete` yet.
+#[cfg(feature = "ssr")]
+async fn list_library_entries(
+    conn: &mut diesel_async::AsyncPgConnection,
+    owner: Uuid,
+) -> Result<Vec<(Uuid, String, String)>, crate::error::AppError> {
+    use crate::schema::ingested_documents::dsl;
+    use diesel::prelude::*;
+    use diesel_async::RunQueryDsl;
+
+    dsl::ingested_documents
+        .filter(dsl::user_id.eq(owner))
+        .order(dsl::created_at.desc())
+        .select((dsl::id, dsl::source_filename, dsl::ingest_status))
         .load(conn)
         .await
         .map_err(crate::error::AppError::from)

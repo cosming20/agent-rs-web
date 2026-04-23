@@ -43,6 +43,14 @@ pub struct Conversation {
     pub title: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// User-chosen active document set for this thread.
+    /// - `None`         — not yet chosen; UI defaults to every
+    ///                    `complete` library doc (backwards-compatible
+    ///                    auto mode).
+    /// - `Some(vec![])` — user explicitly pinned nothing; agent runs
+    ///                    with empty `active_document_keys`.
+    /// - `Some(ids)`    — honour exactly this set.
+    pub pinned_document_ids: Option<Vec<Option<Uuid>>>,
 }
 
 /// A single persisted turn in a conversation.
@@ -296,6 +304,42 @@ pub async fn append_assistant_message(
         .map_err(AppError::from)?;
 
     Ok(inserted)
+}
+
+/// Overwrite the conversation's pinned-document set.
+///
+/// `None` clears any prior explicit selection back to the default
+/// "every complete library doc" mode. `Some(ids)` stores the chosen
+/// subset (empty vector == "no documents for this thread").
+///
+/// Ownership is re-verified in the WHERE clause.
+///
+/// # Errors
+///
+/// `AppError::Db` on write failure.
+pub async fn set_pinned_document_ids(
+    conn: &mut AsyncPgConnection,
+    user_id: Uuid,
+    conversation_id: Uuid,
+    pinned: Option<&[Uuid]>,
+) -> Result<usize, AppError> {
+    use crate::schema::conversations::dsl;
+
+    let value: Option<Vec<Option<Uuid>>> =
+        pinned.map(|ids| ids.iter().copied().map(Some).collect());
+
+    diesel::update(
+        dsl::conversations
+            .filter(dsl::id.eq(conversation_id))
+            .filter(dsl::user_id.eq(user_id)),
+    )
+    .set((
+        dsl::pinned_document_ids.eq(value),
+        dsl::updated_at.eq(diesel::dsl::now),
+    ))
+    .execute(conn)
+    .await
+    .map_err(AppError::from)
 }
 
 /// Delete a conversation. Ownership is re-verified in the WHERE clause so
