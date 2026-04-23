@@ -16,10 +16,10 @@ use leptos::prelude::*;
 
 #[cfg(feature = "ssr")]
 use {
-    axum::extract::{Multipart, State},
+    axum::extract::Multipart,
     axum::http::StatusCode,
     axum::response::Redirect,
-    axum::Form,
+    axum::{Extension, Form},
     chrono::{DateTime, Utc},
     diesel::prelude::*,
     diesel_async::{AsyncPgConnection, RunQueryDsl},
@@ -246,7 +246,7 @@ const MAX_UPLOAD_MB: u64 = 100;
 #[cfg(feature = "ssr")]
 pub async fn upload_handler(
     session: Session,
-    State(state): State<UploadState>,
+    Extension(state): Extension<UploadState>,
     mut multipart: Multipart,
 ) -> Result<Redirect, (StatusCode, String)> {
     let user_id = crate::auth::session_user_id(&session)
@@ -351,7 +351,7 @@ pub struct DeleteForm {
 #[cfg(feature = "ssr")]
 pub async fn delete_handler(
     session: Session,
-    State(state): State<UploadState>,
+    Extension(state): Extension<UploadState>,
     Form(form): Form<DeleteForm>,
 ) -> Result<Redirect, (StatusCode, String)> {
     let user_id = crate::auth::session_user_id(&session)

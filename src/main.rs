@@ -8,7 +8,7 @@
 #[cfg(feature = "ssr")]
 #[tokio::main]
 async fn main() {
-    use axum::{routing::post, Router};
+    use axum::{routing::post, Extension, Router};
     use fred::prelude::{ClientLike, Config as FredConfig, Pool as FredPool};
     use leptos::logging::log;
     use leptos::prelude::*;
@@ -81,9 +81,7 @@ async fn main() {
     let pool_clone = pool.clone();
     let app = Router::new()
         // Plain axum handlers for routes leptos server fns can't model
-        // (multipart upload, form-encoded redirect). These must be
-        // registered BEFORE `.leptos_routes_with_context` so the leptos
-        // fallback doesn't swallow them.
+        // (multipart upload, form-encoded redirect).
         .route(
             "/library/upload",
             post(agent_rs_web::routes::library::upload_handler),
@@ -92,7 +90,6 @@ async fn main() {
             "/library/delete",
             post(agent_rs_web::routes::library::delete_handler),
         )
-        .with_state(upload_state)
         .leptos_routes_with_context(
             &leptos_options,
             routes,
@@ -105,6 +102,14 @@ async fn main() {
             },
         )
         .fallback(leptos_axum::file_and_error_handler(shell))
+        // UploadState is shared via Extension (not .with_state) so the
+        // Router's `S` generic stays `LeptosOptions` — `.with_state`
+        // here would change the type between our plain routes and the
+        // leptos-registered server fns, quietly dropping server-fn
+        // registration (observed: /api/logout_action returned 404
+        // because the leptos_routes segment was attached to the wrong
+        // type stack).
+        .layer(Extension(upload_state))
         // Order matters: inner layer runs first. `from_fn(auth_gate)` needs
         // `Session` extracted, which is only available after `session_layer`
         // has run on the request path. Because tower layers compose inside-
