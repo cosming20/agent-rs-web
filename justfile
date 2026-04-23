@@ -9,11 +9,23 @@ default:
     @just --list
 
 # Bring up the web-local infra (postgres on 1055, redis on 1074).
+#
+# `timeout(1)` isn't a POSIX utility and isn't on macOS by default, so
+# we spell the 30-second budget as a counted shell loop to stay
+# portable across macOS + Linux without a coreutils dependency.
 infra-up:
     docker compose up -d
-    @echo "waiting for postgres to be healthy..."
-    @timeout 30 sh -c 'until docker compose exec -T postgres-web pg_isready -U $${AGENT_RS_WEB_POSTGRES_USER:-webapp} -d $${AGENT_RS_WEB_POSTGRES_DB:-agent_rs_web} >/dev/null 2>&1; do sleep 1; done'
-    @echo "postgres-web ready"
+    @echo "waiting up to 30s for postgres-web to be healthy..."
+    @i=0; while [ $i -lt 30 ]; do \
+        if docker compose exec -T postgres-web pg_isready \
+            -U "$${AGENT_RS_WEB_POSTGRES_USER:-webapp}" \
+            -d "$${AGENT_RS_WEB_POSTGRES_DB:-agent_rs_web}" >/dev/null 2>&1; then \
+            echo "postgres-web ready"; exit 0; \
+        fi; \
+        sleep 1; i=$((i+1)); \
+     done; \
+     echo "postgres-web did NOT become healthy within 30s — check `docker logs agent-rs-web-postgres`"; \
+     exit 1
 
 infra-down:
     docker compose down
