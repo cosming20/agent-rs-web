@@ -8,7 +8,7 @@
 #[cfg(feature = "ssr")]
 #[tokio::main]
 async fn main() {
-    use axum::Router;
+    use axum::{routing::post, Router};
     use fred::prelude::{ClientLike, Config as FredConfig, Pool as FredPool};
     use leptos::logging::log;
     use leptos::prelude::*;
@@ -20,6 +20,8 @@ async fn main() {
 
     use agent_rs_web::app::{shell, App};
     use agent_rs_web::db::{build_pool, DbPool};
+    use agent_rs_web::minio_client::{MinioClient, MinioConfig};
+    use agent_rs_web::routes::library::UploadState;
 
     // ---------------------------------------------------------------------------
     // Observability
@@ -70,8 +72,27 @@ async fn main() {
     let leptos_options = conf.leptos_options;
     let routes = generate_route_list(App);
 
+    let minio_client = MinioClient::new(&MinioConfig::from_env());
+    let upload_state = UploadState {
+        pool: pool.clone(),
+        minio: minio_client.clone(),
+    };
+
     let pool_clone = pool.clone();
     let app = Router::new()
+        // Plain axum handlers for routes leptos server fns can't model
+        // (multipart upload, form-encoded redirect). These must be
+        // registered BEFORE `.leptos_routes_with_context` so the leptos
+        // fallback doesn't swallow them.
+        .route(
+            "/library/upload",
+            post(agent_rs_web::routes::library::upload_handler),
+        )
+        .route(
+            "/library/delete",
+            post(agent_rs_web::routes::library::delete_handler),
+        )
+        .with_state(upload_state)
         .leptos_routes_with_context(
             &leptos_options,
             routes,

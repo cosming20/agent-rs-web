@@ -15,6 +15,8 @@ pub mod db;
 #[cfg(feature = "ssr")]
 pub mod middleware;
 #[cfg(feature = "ssr")]
+pub mod minio_client;
+#[cfg(feature = "ssr")]
 pub mod schema;
 
 #[cfg(feature = "hydrate")]

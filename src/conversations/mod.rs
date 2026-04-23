@@ -46,6 +46,12 @@ pub struct Conversation {
 }
 
 /// A single persisted turn in a conversation.
+///
+/// `attached_document_ids` pins which library documents were active for
+/// this turn; diesel maps the PG `uuid[]` column as
+/// `Vec<Option<Uuid>>` because array elements are typed-nullable at the
+/// protocol level (PG supports NULL in the array). We never store NULLs
+/// ourselves, but the type has to carry the possibility.
 #[derive(Debug, Clone, Queryable, Selectable, Serialize, Deserialize)]
 #[diesel(table_name = crate::schema::conversation_messages)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
@@ -54,6 +60,7 @@ pub struct Message {
     pub conversation_id: Uuid,
     pub role: String,
     pub content: String,
+    pub attached_document_ids: Vec<Option<Uuid>>,
     pub citations: serde_json::Value,
     pub confidence: Option<f64>,
     pub is_grounded: Option<bool>,
@@ -73,6 +80,7 @@ struct NewMessage<'a> {
     conversation_id: Uuid,
     role: &'a str,
     content: &'a str,
+    attached_document_ids: &'a [Option<Uuid>],
     citations: serde_json::Value,
     confidence: Option<f64>,
     is_grounded: Option<bool>,
@@ -187,14 +195,20 @@ pub async fn append_user_message(
     conn: &mut AsyncPgConnection,
     conversation: &Conversation,
     content: &str,
+    attached_document_ids: &[Uuid],
 ) -> Result<Message, AppError> {
     use crate::schema::conversation_messages::dsl as msg_dsl;
     use crate::schema::conversations::dsl as conv_dsl;
+
+    // Array elements on PG uuid[] are typed-nullable; wrap in Some(_)
+    // so the column shape lines up with the Queryable side.
+    let attached: Vec<Option<Uuid>> = attached_document_ids.iter().copied().map(Some).collect();
 
     let row = NewMessage {
         conversation_id: conversation.id,
         role: "user",
         content,
+        attached_document_ids: &attached,
         citations: serde_json::json!([]),
         confidence: None,
         is_grounded: None,
@@ -254,10 +268,15 @@ pub async fn append_assistant_message(
     use crate::schema::conversation_messages::dsl as msg_dsl;
     use crate::schema::conversations::dsl as conv_dsl;
 
+    // Assistant replies don't pin documents; the attachment
+    // column is always empty for the assistant row.
+    let attached: Vec<Option<Uuid>> = Vec::new();
+
     let row = NewMessage {
         conversation_id,
         role: "assistant",
         content,
+        attached_document_ids: &attached,
         citations,
         confidence,
         is_grounded,

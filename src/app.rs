@@ -4,11 +4,11 @@ use leptos::prelude::*;
 use leptos_meta::{provide_meta_context, MetaTags, Stylesheet, Title};
 use leptos_router::{
     components::{Route, Router, Routes},
-    StaticSegment,
+    ParamSegment, StaticSegment,
 };
 
 use crate::routes::{
-    chat::ChatPage,
+    chat::{ChatPage, ConversationPage},
     library::LibraryPage,
     login::LoginPage,
     signup::SignupPage,
@@ -55,6 +55,10 @@ pub fn App() -> impl IntoView {
                     <Route path=StaticSegment("signup") view=SignupPage/>
                     // Authenticated
                     <Route path=StaticSegment("chat")    view=ChatPage/>
+                    <Route
+                        path=(StaticSegment("chat"), ParamSegment("id"))
+                        view=ConversationPage
+                    />
                     <Route path=StaticSegment("library") view=LibraryPage/>
                     // Root redirect — handled server-side in main.rs
                     <Route path=StaticSegment("") view=RootRedirect/>
