@@ -8,7 +8,7 @@ set dotenv-load := true
 default:
     @just --list
 
-# Bring up the web-local infra (postgres on 1073, redis on 1074).
+# Bring up the web-local infra (postgres on 1055, redis on 1074).
 infra-up:
     docker compose up -d
     @echo "waiting for postgres to be healthy..."
@@ -29,6 +29,25 @@ status:
 # Apply diesel migrations against the web-local postgres.
 migrations:
     diesel migration run --migration-dir migrations
+
+# TRUNCATE every application table in the web-local Postgres. Keeps
+# the schema + migrations ledger so you can re-seed without re-running
+# `just migrations`. Destructive in the "wipes all users + docs"
+# sense; idempotent structurally.
+#
+# Skips the prompt when `FORCE=1` so scripts / the agent-rs top-level
+# `data-wipe` can cascade through without human-in-the-loop.
+data-wipe:
+    @if [ "${FORCE:-0}" != "1" ]; then \
+        read -p "Wipe ALL data from web postgres (users, conversations, messages, ingested_documents)? [y/N] " c; \
+        if [ "$c" != "y" ] && [ "$c" != "Y" ]; then echo "Aborted."; exit 1; fi; \
+     fi
+    @echo "→ web Postgres: truncating application tables..."
+    docker compose exec -T postgres-web psql \
+        -U "${AGENT_RS_WEB_POSTGRES_USER:-webapp}" \
+        -d "${AGENT_RS_WEB_POSTGRES_DB:-agent_rs_web}" \
+        -c 'TRUNCATE conversation_messages, conversations, ingested_documents, users RESTART IDENTITY CASCADE;'
+    @echo "web data wipe complete."
 
 # One-shot dev: `cargo leptos watch` with DATABASE_URL + REDIS_URL + AGENT_RS_GRPC_URL from .env.
 dev:

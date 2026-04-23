@@ -2,7 +2,8 @@
 #
 # Isolated from agent-rs' own docker-compose: different databases,
 # different ports, different volumes. agent-rs keeps its app-data
-# Postgres on 1054; agent-rs-web owns its web-data Postgres on 1073
+# Postgres on 1054; agent-rs-web owns its web-data Postgres on 1055
+# (deliberately adjacent to the agent one for easy mental mapping)
 # and Redis on 1074. The two services are loosely coupled via the
 # agent-rs gRPC endpoint (defaults to host:1072 — override with
 # AGENT_RS_GRPC_URL).
@@ -20,7 +21,7 @@ services:
     image: postgres:17.4
     container_name: agent-rs-web-postgres
     ports:
-      - "${AGENT_RS_WEB_POSTGRES_PORT:-1073}:5432"
+      - "${AGENT_RS_WEB_POSTGRES_PORT:-1055}:5432"
     environment:
       POSTGRES_USER: ${AGENT_RS_WEB_POSTGRES_USER:-webapp}
       POSTGRES_PASSWORD: ${AGENT_RS_WEB_POSTGRES_PASSWORD:-changeme-web}
