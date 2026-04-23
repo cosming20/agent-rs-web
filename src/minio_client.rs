@@ -131,9 +131,20 @@ impl MinioClient {
 /// `agent_rs_stores::minio::object_key` so the IndexerWorker's ownership
 /// guard in `MinioStore::get_bytes_by_key` accepts what we wrote.
 ///
-/// Layout: `users/{user_id}/docs/{document_uuid}.{ext}`.
+/// The agent side keys the prefix on `UserId::as_str()` which is the
+/// `Uuid::as_simple()` form (32 hex, no dashes) — we must match it
+/// byte-for-byte or the IndexerWorker rejects the fetch with
+/// `DocumentNotOwnedByUser`. The document segment keeps the hyphenated
+/// form because it is opaque downstream.
+///
+/// Layout: `users/{user_id_simple}/docs/{document_uuid}.{ext}`.
 pub fn object_key(user_id: Uuid, document_id: Uuid, ext: &str) -> String {
-    format!("users/{user_id}/docs/{document_id}.{ext}")
+    format!(
+        "users/{}/docs/{}.{}",
+        user_id.as_simple(),
+        document_id,
+        ext
+    )
 }
 
 /// Map a MIME type to a canonical filename extension. Unknown types fall
