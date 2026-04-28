@@ -30,8 +30,7 @@ pub async fn login_action(email: String, password: String) -> Result<(), ServerF
             .ok_or_else(|| AppError::Internal("db pool missing from context".to_string()))
             .map_err(|e| e.into_server_fn_error())?;
         let session: Session = extract().await.map_err(|e| {
-            AppError::Internal(format!("session extract failed: {e}"))
-                .into_server_fn_error()
+            AppError::Internal(format!("session extract failed: {e}")).into_server_fn_error()
         })?;
 
         let mut conn = pool

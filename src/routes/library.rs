@@ -30,7 +30,10 @@ use {
 };
 
 #[cfg(not(feature = "ssr"))]
-use {serde::{Deserialize, Serialize}, uuid::Uuid};
+use {
+    serde::{Deserialize, Serialize},
+    uuid::Uuid,
+};
 
 // ---------------------------------------------------------------------------
 // Persisted row (SSR-only)
@@ -206,9 +209,10 @@ pub async fn list_documents_action() -> Result<Vec<IngestedDocumentView>, Server
             .await
             .map_err(|e| ServerFnError::new(format!("list docs: {e}")))?;
         let user_grpc_id = user_id.as_simple().to_string();
-        for doc in docs.iter().filter(|d| {
-            d.ingest_status != "complete" && d.ingest_status != "failed"
-        }) {
+        for doc in docs
+            .iter()
+            .filter(|d| d.ingest_status != "complete" && d.ingest_status != "failed")
+        {
             if let Ok(status) =
                 crate::grpc::get_document_status(&user_grpc_id, &doc.minio_object_key).await
             {
@@ -301,19 +305,13 @@ pub async fn upload_handler(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("db conn: {e}")))?;
 
-    let inserted = insert_ingested_document(
-        &mut conn,
-        user_id,
-        &key,
-        &filename,
-        &content_type,
-        size,
-    )
-    .await
-    .map_err(|e| {
-        error!(error = %e, "insert ingested_documents failed");
-        (StatusCode::INTERNAL_SERVER_ERROR, "db insert failed".into())
-    })?;
+    let inserted =
+        insert_ingested_document(&mut conn, user_id, &key, &filename, &content_type, size)
+            .await
+            .map_err(|e| {
+                error!(error = %e, "insert ingested_documents failed");
+                (StatusCode::INTERNAL_SERVER_ERROR, "db insert failed".into())
+            })?;
 
     let user_grpc_id = user_id.as_simple().to_string();
     match crate::grpc::enqueue_index(&user_grpc_id, &key).await {

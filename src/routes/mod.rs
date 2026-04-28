@@ -36,8 +36,7 @@ pub async fn logout_action() -> Result<(), leptos::prelude::ServerFnError> {
         use crate::error::AppError;
 
         let session: Session = extract().await.map_err(|e| {
-            AppError::Internal(format!("session extract failed: {e}"))
-                .into_server_fn_error()
+            AppError::Internal(format!("session extract failed: {e}")).into_server_fn_error()
         })?;
 
         session_clear(&session)

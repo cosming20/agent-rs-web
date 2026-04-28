@@ -158,10 +158,7 @@ pub async fn verify_credentials(
 /// # Errors
 ///
 /// `AppError::Db` on query failure; `AppError::Unauthenticated` if not found.
-pub async fn load_user_by_id(
-    conn: &mut AsyncPgConnection,
-    id: Uuid,
-) -> Result<User, AppError> {
+pub async fn load_user_by_id(conn: &mut AsyncPgConnection, id: Uuid) -> Result<User, AppError> {
     use crate::schema::users::dsl;
 
     dsl::users

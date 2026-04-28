@@ -14,7 +14,11 @@ axum = { version = "0.8.0", optional = true, features = ["multipart"] }
 console_error_panic_hook = { version = "0.1", optional = true }
 leptos_axum = { version = "0.8.0", optional = true }
 leptos_meta = { version = "0.8.0" }
-tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "sync"], optional = true }
+# `ReceiverStream` adapter for the chat SSE handler — bridges tokio
+# mpsc receivers into the `Stream` trait that axum's `Sse` body
+# consumes. Pinned to the same generation as our tokio dep.
+tokio-stream = { version = "0.1", optional = true }
 wasm-bindgen = { version = "0.2.106", optional = true }
 
 # gRPC client against github.com/cosming20/agent-rs-proto (compiled at
@@ -28,7 +32,10 @@ tonic-types = { version = "0.12", optional = true }
 # with bcrypt-hashed passwords + axum session cookies. SSR-only.
 bcrypt          = { version = "0.15", optional = true }
 serde           = { version = "1",    features = ["derive"] }
-serde_json      = { version = "1",    optional = true }
+# Used by both SSR (DB jsonb columns, gRPC payload re-encoding) and
+# hydrate (parsing the SSE `data:` payloads emitted by
+# `routes::chat::ask_stream_handler`), so it stays non-optional.
+serde_json      = { version = "1" }
 uuid            = { version = "1",    features = ["v4", "serde", "js"] }
 tower-sessions              = { version = "0.14", optional = true }
 # Redis-backed session store — sessions survive a server restart
@@ -64,15 +71,32 @@ dotenvy = { version = "0.15", optional = true }
 # Leptos re-exports web-sys but does not enable every DOM type by
 # default; the upload form in routes/library.rs needs File + FileList
 # + the HtmlInputElement.files() method, all gated behind per-type
-# features on web-sys.
+# features on web-sys. The Ask streaming hook in routes/chat.rs needs
+# Request / Response / fetch / ReadableStream + TextDecoder so it can
+# read SSE chunks off `/api/ask_stream` and surface deltas live.
 js-sys              = { version = "0.3", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
 web-sys             = { version = "0.3", optional = true, features = [
     "Blob",
+    "Document",
+    "Event",
+    "EventTarget",
     "File",
     "FileList",
-    "HtmlInputElement",
+    "FormData",
+    "Headers",
+    "HtmlElement",
     "HtmlFormElement",
+    "HtmlInputElement",
+    "HtmlTextAreaElement",
+    "ReadableStream",
+    "ReadableStreamDefaultReader",
+    "Request",
+    "RequestInit",
+    "Response",
+    "SubmitEvent",
+    "TextDecoder",
+    "Window",
 ] }
 
 # Errors + observability.
@@ -96,6 +120,7 @@ hydrate = [
 ssr = [
     "dep:axum",
     "dep:tokio",
+    "dep:tokio-stream",
     "dep:leptos_axum",
     "leptos/ssr",
     "leptos_meta/ssr",
@@ -105,7 +130,6 @@ ssr = [
     "dep:prost",
     "dep:tonic-types",
     "dep:bcrypt",
-    "dep:serde_json",
     "dep:tower-sessions",
     "dep:tower-sessions-redis-store",
     "dep:fred",

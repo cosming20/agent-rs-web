@@ -15,9 +15,9 @@
 
 use std::env;
 
-use aws_sdk_s3::Client;
 use aws_sdk_s3::config::{Credentials, Region};
 use aws_sdk_s3::primitives::ByteStream;
+use aws_sdk_s3::Client;
 use uuid::Uuid;
 
 use crate::error::AppError;
@@ -139,12 +139,7 @@ impl MinioClient {
 ///
 /// Layout: `users/{user_id_simple}/docs/{document_uuid}.{ext}`.
 pub fn object_key(user_id: Uuid, document_id: Uuid, ext: &str) -> String {
-    format!(
-        "users/{}/docs/{}.{}",
-        user_id.as_simple(),
-        document_id,
-        ext
-    )
+    format!("users/{}/docs/{}.{}", user_id.as_simple(), document_id, ext)
 }
 
 /// Map a MIME type to a canonical filename extension. Unknown types fall

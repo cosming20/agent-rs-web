@@ -45,10 +45,9 @@ pub struct Conversation {
     pub updated_at: DateTime<Utc>,
     /// User-chosen active document set for this thread.
     /// - `None`         — not yet chosen; UI defaults to every
-    ///                    `complete` library doc (backwards-compatible
-    ///                    auto mode).
+    ///   `complete` library doc (backwards-compatible auto mode).
     /// - `Some(vec![])` — user explicitly pinned nothing; agent runs
-    ///                    with empty `active_document_keys`.
+    ///   with empty `active_document_keys`.
     /// - `Some(ids)`    — honour exactly this set.
     pub pinned_document_ids: Option<Vec<Option<Uuid>>>,
 }
@@ -60,6 +59,11 @@ pub struct Conversation {
 /// `Vec<Option<Uuid>>` because array elements are typed-nullable at the
 /// protocol level (PG supports NULL in the array). We never store NULLs
 /// ourselves, but the type has to carry the possibility.
+///
+/// The legacy `is_grounded` column is kept on the table for backwards
+/// compatibility with rows written before the agent-rs grounding-
+/// verifier was removed (proto field 4 of `AskFinal` is now reserved).
+/// We no longer write it on new turns and the UI no longer reads it.
 #[derive(Debug, Clone, Queryable, Selectable, Serialize, Deserialize)]
 #[diesel(table_name = crate::schema::conversation_messages)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
@@ -71,7 +75,6 @@ pub struct Message {
     pub attached_document_ids: Vec<Option<Uuid>>,
     pub citations: serde_json::Value,
     pub confidence: Option<f64>,
-    pub is_grounded: Option<bool>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -91,7 +94,6 @@ struct NewMessage<'a> {
     attached_document_ids: &'a [Option<Uuid>],
     citations: serde_json::Value,
     confidence: Option<f64>,
-    is_grounded: Option<bool>,
 }
 
 // ---------------------------------------------------------------------------
@@ -219,7 +221,6 @@ pub async fn append_user_message(
         attached_document_ids: &attached,
         citations: serde_json::json!([]),
         confidence: None,
-        is_grounded: None,
     };
 
     let inserted: Message = diesel::insert_into(msg_dsl::conversation_messages)
@@ -271,7 +272,6 @@ pub async fn append_assistant_message(
     content: &str,
     citations: serde_json::Value,
     confidence: Option<f64>,
-    is_grounded: Option<bool>,
 ) -> Result<Message, AppError> {
     use crate::schema::conversation_messages::dsl as msg_dsl;
     use crate::schema::conversations::dsl as conv_dsl;
@@ -287,7 +287,6 @@ pub async fn append_assistant_message(
         attached_document_ids: &attached,
         citations,
         confidence,
-        is_grounded,
     };
 
     let inserted: Message = diesel::insert_into(msg_dsl::conversation_messages)

@@ -21,6 +21,7 @@ async fn main() {
     use agent_rs_web::app::{shell, App};
     use agent_rs_web::db::{build_pool, DbPool};
     use agent_rs_web::minio_client::{MinioClient, MinioConfig};
+    use agent_rs_web::routes::chat::AskStreamState;
     use agent_rs_web::routes::library::UploadState;
 
     // ---------------------------------------------------------------------------
@@ -54,10 +55,7 @@ async fn main() {
     // `wait_for_connect` blocks until the pool is ready so the first
     // session read/write doesn't race against cold start.
     let _reconnect_handle = fred_pool.init().await.expect("start Redis reconnect loop");
-    fred_pool
-        .wait_for_connect()
-        .await
-        .expect("connect Redis");
+    fred_pool.wait_for_connect().await.expect("connect Redis");
     let session_store = RedisStore::new(fred_pool);
     let session_layer = SessionManagerLayer::new(session_store)
         .with_name("agent-rs-web-session")
@@ -77,11 +75,13 @@ async fn main() {
         pool: pool.clone(),
         minio: minio_client.clone(),
     };
+    let ask_stream_state = AskStreamState { pool: pool.clone() };
 
     let pool_clone = pool.clone();
     let app = Router::new()
         // Plain axum handlers for routes leptos server fns can't model
-        // (multipart upload, form-encoded redirect).
+        // (multipart upload, form-encoded redirect, server-streaming
+        // SSE for the chat answer pipeline).
         .route(
             "/library/upload",
             post(agent_rs_web::routes::library::upload_handler),
@@ -89,6 +89,10 @@ async fn main() {
         .route(
             "/library/delete",
             post(agent_rs_web::routes::library::delete_handler),
+        )
+        .route(
+            "/api/ask_stream",
+            post(agent_rs_web::routes::chat::ask_stream_handler),
         )
         .leptos_routes_with_context(
             &leptos_options,
@@ -110,6 +114,7 @@ async fn main() {
         // because the leptos_routes segment was attached to the wrong
         // type stack).
         .layer(Extension(upload_state))
+        .layer(Extension(ask_stream_state))
         // Order matters: inner layer runs first. `from_fn(auth_gate)` needs
         // `Session` extracted, which is only available after `session_layer`
         // has run on the request path. Because tower layers compose inside-
